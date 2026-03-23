@@ -1,0 +1,9 @@
+Flask==2.3.0
+Flask-CORS==4.0.0
+python-dotenv==1.0.0
+networkx==3.2
+google-generativeai==0.3.0
+jsonlines==4.0.0
+pandas==2.0.0
+numpy==1.24.0
+gunicorn==21.2.0
