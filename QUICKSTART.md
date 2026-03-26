@@ -1,87 +1,83 @@
 # Quick Start Guide
 
-## 5-Minute Setup
+## 5 Minutes to Running
 
-### Prerequisites
-- Python 3.8+
-- A text editor
-- ~2GB free disk space (includes dataset)
+### Step 1: Get an API Key (Free)
 
-### Step 1: Get Google API Key (2 minutes)
+Go to https://ai.google.dev and:
+1. Click "Get API Key"
+2. Create a new key (no credit card)
+3. Copy it
 
-1. Visit https://ai.google.dev
-2. Click "Get API Key"
-3. Create a new API key (free tier - no credit card needed)
-4. Copy the API key
+### Step 2: Set It Up
 
-### Step 2: Configure API Key (1 minute)
-
-Edit `backend/.env`:
+Edit `backend/.env` and paste your key:
 ```
-GOOGLE_API_KEY=paste_your_key_here
+GOOGLE_API_KEY=your_key_here
 ```
 
-### Step 3: Install & Run (2 minutes)
+### Step 3: Install Stuff
 
 ```bash
-# Install dependencies
 cd backend
 pip install -r requirements.txt
-
-# Run the system
-python app.py
 ```
 
-In another terminal:
+### Step 4: Run It
+
 ```bash
-# Start frontend
+# Terminal 1 - Run the backend
+python app.py
+
+# Terminal 2 - Run the frontend
 cd frontend
 python -m http.server 8000
 ```
 
-### Step 4: Open in Browser
+### Step 5: Open in Browser
 
-Visit: http://localhost:8000
+Go to **http://localhost:8000**
 
-## Troubleshooting
+Done! Try asking it questions.
 
-**"ModuleNotFoundError: No module named 'flask'"**
-→ Run: `pip install -r requirements.txt`
+---
 
-**"GOOGLE_API_KEY environment variable not set"**
-→ Edit `backend/.env` and add your API key
+## What You Can Do Right Now
 
-**"Address already in use"**
-→ Change port in `.env` or use different terminal
+Ask it things like:
+- "Which products show up in the most invoices?"
+- "Trace order 740506 all the way through"
+- "Show orders that got delivered but not billed"
+- "What's the revenue from customer 310000108 so far?"
 
-**Backend responds slowly**
-→ Normal on first run (loading 690 nodes takes 10-15s)
+---
 
-## What You Can Do
+## Stuck?
 
-- 🔍 Explore the SAP data graph
-- 💬 Ask questions in natural language
-- 📊 Trace orders through delivery→billing→payment
-- 📈 Find top products by billing frequency
-- ⚠️ Identify incomplete order flows
+| Problem | Solution |
+|---------|----------|
+| "ModuleNotFoundError" | Run `pip install -r requirements.txt` |
+| API key error | Make sure you pasted it in `backend/.env` |
+| "Port already in use" | Close other Python windows or change port |
+| Backend is slow | It's loading data (first time takes 10-15 seconds) |
 
-## Example Queries
+---
 
-1. "Which products have the most invoices?"
-2. "Trace order 740506 from creation to payment"
-3. "Show me orders with deliveries but no billing"
-4. "What's the total revenue for customer 310000108?"
+## Learn More
 
-## Next Steps
+- [README.md](README.md) - Full guide
+- [ARCHITECTURE.md](ARCHITECTURE.md) - How it works
+- `backend/` folder - Code with explanations
 
-- Read [README.md](README.md) for detailed documentation
-- Check [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions
-- Explore the codebase in `backend/` and `frontend/`
+## Validate Your Setup
 
-## Need Help?
-
-Check the troubleshooting section in README.md or review the test script:
 ```bash
 cd backend
 python test_graph.py
 ```
+
+Should print: "✅ All tests passed!"
+
+---
+
+Done? Start asking questions in the chat! 🎉
