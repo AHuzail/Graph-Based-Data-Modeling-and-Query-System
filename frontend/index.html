@@ -72,6 +72,60 @@
         #network {
             flex: 1;
             background: #fafafa;
+            min-height: 420px;
+        }
+
+        .graph-toolbar {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .graph-toolbar input,
+        .graph-toolbar select {
+            padding: 6px 8px;
+            border: 1px solid #d7d7d7;
+            border-radius: 4px;
+            font-size: 12px;
+            background: #fff;
+        }
+
+        .graph-toolbar button {
+            padding: 6px 10px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #fff;
+            background: #667eea;
+        }
+
+        .graph-toolbar button.secondary {
+            background: #607d8b;
+        }
+
+        .graph-toolbar button.purple {
+            background: #764ba2;
+        }
+
+        .node-inspector {
+            border-top: 1px solid #e0e0e0;
+            background: #ffffff;
+            padding: 10px 14px;
+            min-height: 96px;
+            max-height: 140px;
+            overflow: auto;
+            font-size: 12px;
+        }
+
+        .node-inspector h3 {
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #455a64;
         }
 
         #chatMessages {
@@ -113,6 +167,39 @@
             font-size: 13px;
             line-height: 1.4;
             word-wrap: break-word;
+        }
+
+        .message-content p {
+            margin: 0 0 6px 0;
+        }
+
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-content ul {
+            margin: 6px 0 6px 16px;
+            padding: 0;
+        }
+
+        .message-content li {
+            margin-bottom: 4px;
+        }
+
+        .message-content code {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-family: Consolas, 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .message-content pre {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 8px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 6px 0;
         }
 
         .message.user .message-content {
@@ -281,6 +368,18 @@
                     <h1>SAP Order-to-Cash Data Graph</h1>
                     <p>Explore relationships between orders, deliveries, invoices, and payments</p>
                 </div>
+                <div class="graph-toolbar">
+                    <button onclick="fitToView()">📍 Fit Graph</button>
+                    <button onclick="zoomIn()" class="purple">🔍 Zoom +</button>
+                    <button onclick="zoomOut()" class="purple">🔍 Zoom -</button>
+                    <input type="text" id="nodeSearch" placeholder="Search node id..." />
+                    <button onclick="searchAndFocusNode()" class="secondary">Find</button>
+                    <select id="typeFilter">
+                        <option value="all">All Types</option>
+                    </select>
+                    <button onclick="applyTypeFilter()" class="secondary">Apply Filter</button>
+                    <button onclick="resetGraphView()" class="secondary">Reset</button>
+                </div>
                 <div class="stats-bar" id="statsBar">
                     <div class="stat-item">
                         <div class="stat-label">Nodes</div>
@@ -300,6 +399,10 @@
                     </div>
                 </div>
                 <div id="network"></div>
+                <div class="node-inspector" id="nodeInspector">
+                    <h3>Node Details</h3>
+                    <div id="nodeInfo">Click any node to inspect details and connected neighbors.</div>
+                </div>
             </div>
         </div>
 
@@ -332,6 +435,8 @@
         let nodes = new vis.DataSet();
         let edges = new vis.DataSet();
         let selectedNodeId = null;
+        let allNodesData = [];
+        let allEdgesData = [];
 
         // Color mapping for node types
         const nodeColors = {
@@ -381,11 +486,66 @@
                 document.getElementById('orderCount').textContent = data.node_types?.order || '-';
                 document.getElementById('deliveryCount').textContent = data.node_types?.delivery || '-';
 
-                // Create sample nodes and edges for visualization
-                createSampleGraph(data);
+                // Load full graph data from backend
+                await loadFullGraph(data);
             } catch (error) {
                 console.error('Error loading graph data:', error);
                 addSystemMessage('Failed to load graph data.');
+            }
+        }
+
+        async function loadFullGraph(summary) {
+            try {
+                // Load graph from new /api/graph/all endpoint
+                const response = await fetch(`${API_BASE}/graph/all?connected=true&limit=400&max_edges=1800`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load full graph');
+                }
+                
+                const graphData = await response.json();
+                
+                // Clear and populate nodes and edges
+                nodes.clear();
+                edges.clear();
+                
+                // Add nodes with proper colors
+                if (graphData.nodes && graphData.nodes.length > 0) {
+                    allNodesData = graphData.nodes;
+                    graphData.nodes.forEach(node => {
+                        const nodeType = node.type || 'unknown';
+                        nodes.add({
+                            id: node.id,
+                            label: String(node.id).substring(0, 14),
+                            color: nodeColors[nodeType] || '#999999',
+                            title: `${nodeType} (ID: ${node.id})`,
+                            group: nodeType
+                        });
+                    });
+                }
+                
+                // Add edges
+                if (graphData.edges && graphData.edges.length > 0) {
+                    allEdgesData = graphData.edges;
+                    graphData.edges.forEach(edge => {
+                        edges.add({
+                            from: edge.from,
+                            to: edge.to,
+                            label: '',
+                            arrows: 'to'
+                        });
+                    });
+                }
+
+                if (!graphData.nodes || graphData.nodes.length === 0) {
+                    addSystemMessage('Graph returned no nodes. Please check backend data loading.');
+                }
+                
+                console.log(`Loaded ${graphData.nodes.length} nodes and ${graphData.edges.length} edges`);
+                populateTypeFilter();
+            } catch (error) {
+                console.error('Error loading full graph:', error);
+                addSystemMessage('Failed to load full graph. Please check backend logs.');
             }
         }
 
@@ -425,45 +585,246 @@
             const options = {
                 physics: {
                     enabled: true,
+                    barnesHut: {
+                        gravitationalConstant: -4000,
+                        springLength: 120,
+                        springConstant: 0.04
+                    },
                     stabilization: {
-                        iterations: 200
+                        enabled: true,
+                        iterations: 160,
+                        updateInterval: 25
                     }
                 },
                 nodes: {
-                    shape: 'box',
-                    font: { size: 12, face: 'Inter' },
-                    margin: 8,
-                    widthConstraint: { maximum: 120 }
+                    shape: 'dot',
+                    size: 8,
+                    borderWidth: 1,
+                    font: { size: 9, face: 'Inter' }
                 },
                 edges: {
-                    font: { size: 10 },
-                    smooth: { type: 'continuous' },
+                    color: { color: '#b9d9f7', opacity: 0.55 },
+                    smooth: false,
                     arrows: { to: { enabled: true, scaleFactor: 0.5 } }
                 },
                 interaction: {
                     hover: true,
                     navigationButtons: true,
-                    keyboard: true
+                    keyboard: true,
+                    tooltipDelay: 120
                 }
             };
 
             network = new vis.Network(container, data, options);
 
+            network.once('stabilized', () => {
+                fitToView();
+            });
+
             network.on('click', async function(params) {
                 if (params.nodes.length > 0) {
                     selectedNodeId = params.nodes[0];
+                    highlightNeighborhood(selectedNodeId);
                     await showNodeDetails(selectedNodeId);
+                } else {
+                    resetGraphStyles();
                 }
             });
+        }
+
+        function populateTypeFilter() {
+            const select = document.getElementById('typeFilter');
+            if (!select) return;
+
+            const types = [...new Set(allNodesData.map(n => n.type || 'unknown'))].sort();
+            select.innerHTML = '<option value="all">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                select.appendChild(option);
+            });
+        }
+
+        function applyTypeFilter() {
+            const select = document.getElementById('typeFilter');
+            const selectedType = select ? select.value : 'all';
+
+            if (selectedType === 'all') {
+                nodes.clear();
+                edges.clear();
+                allNodesData.forEach(node => {
+                    const nodeType = node.type || 'unknown';
+                    nodes.add({
+                        id: node.id,
+                        label: String(node.id).substring(0, 14),
+                        color: nodeColors[nodeType] || '#999999',
+                        title: `${nodeType} (ID: ${node.id})`,
+                        group: nodeType
+                    });
+                });
+                allEdgesData.forEach(edge => {
+                    edges.add({ from: edge.from, to: edge.to, label: '', arrows: 'to' });
+                });
+            } else {
+                const visibleNodeIds = new Set(
+                    allNodesData.filter(n => (n.type || 'unknown') === selectedType).map(n => n.id)
+                );
+
+                const filteredEdges = allEdgesData.filter(
+                    e => visibleNodeIds.has(e.from) || visibleNodeIds.has(e.to)
+                );
+
+                filteredEdges.forEach(e => {
+                    visibleNodeIds.add(e.from);
+                    visibleNodeIds.add(e.to);
+                });
+
+                nodes.clear();
+                edges.clear();
+
+                allNodesData.filter(n => visibleNodeIds.has(n.id)).forEach(node => {
+                    const nodeType = node.type || 'unknown';
+                    nodes.add({
+                        id: node.id,
+                        label: String(node.id).substring(0, 14),
+                        color: nodeColors[nodeType] || '#999999',
+                        title: `${nodeType} (ID: ${node.id})`,
+                        group: nodeType
+                    });
+                });
+
+                filteredEdges.forEach(edge => {
+                    edges.add({ from: edge.from, to: edge.to, label: '', arrows: 'to' });
+                });
+            }
+
+            fitToView();
+        }
+
+        function searchAndFocusNode() {
+            const input = document.getElementById('nodeSearch');
+            const term = (input ? input.value : '').trim().toLowerCase();
+            if (!term) return;
+
+            const match = allNodesData.find(n => String(n.id).toLowerCase().includes(term));
+            if (!match) {
+                addSystemMessage(`No node found for: ${term}`);
+                return;
+            }
+
+            if (network) {
+                network.selectNodes([match.id]);
+                network.focus(match.id, {
+                    scale: 1.2,
+                    animation: { duration: 600, easingFunction: 'easeInOutQuad' }
+                });
+                highlightNeighborhood(match.id);
+                showNodeDetails(match.id);
+            }
+        }
+
+        function highlightNeighborhood(nodeId) {
+            if (!network || !nodeId) return;
+
+            const connectedNodes = new Set(network.getConnectedNodes(nodeId));
+            connectedNodes.add(nodeId);
+
+            const nodeUpdates = nodes.get().map(n => ({
+                id: n.id,
+                opacity: connectedNodes.has(n.id) ? 1 : 0.2
+            }));
+
+            const edgeUpdates = edges.get().map(e => {
+                const inNeighborhood = connectedNodes.has(e.from) && connectedNodes.has(e.to);
+                return { id: e.id, color: { color: inNeighborhood ? '#5aa9e6' : '#dcdcdc', opacity: inNeighborhood ? 0.9 : 0.15 } };
+            });
+
+            nodes.update(nodeUpdates);
+            edges.update(edgeUpdates);
+        }
+
+        function resetGraphStyles() {
+            const nodeUpdates = nodes.get().map(n => ({ id: n.id, opacity: 1 }));
+            const edgeUpdates = edges.get().map(e => ({ id: e.id, color: { color: '#b9d9f7', opacity: 0.55 } }));
+            nodes.update(nodeUpdates);
+            edges.update(edgeUpdates);
+        }
+
+        function resetGraphView() {
+            const typeFilter = document.getElementById('typeFilter');
+            const nodeSearch = document.getElementById('nodeSearch');
+            if (typeFilter) typeFilter.value = 'all';
+            if (nodeSearch) nodeSearch.value = '';
+            applyTypeFilter();
+            resetGraphStyles();
+            fitToView();
+        }
+
+        function fitToView() {
+            if (network) {
+                network.fit({
+                    animation: {
+                        duration: 500,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            }
+        }
+
+        function zoomIn() {
+            if (network) {
+                const scale = network.getScale();
+                network.moveTo({
+                    scale: scale * 1.3,
+                    animation: {
+                        duration: 300,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            }
+        }
+
+        function zoomOut() {
+            if (network) {
+                const scale = network.getScale();
+                network.moveTo({
+                    scale: scale / 1.3,
+                    animation: {
+                        duration: 300,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            }
         }
 
         async function showNodeDetails(nodeId) {
             try {
                 const response = await fetch(`${API_BASE}/graph/node/${nodeId}`);
                 const data = await response.json();
+                const info = document.getElementById('nodeInfo');
+                if (!info) return;
 
-                // Could display in a panel, but for now just log
-                console.log('Node details:', data);
+                if (!response.ok || data.error) {
+                    info.innerHTML = `<strong>${escapeHtml(nodeId)}</strong><br>${escapeHtml(data.error || 'Unable to load node details.')}`;
+                    return;
+                }
+
+                const type = data.type || 'unknown';
+                const id = data.id || nodeId;
+                const amount = data.amount !== undefined ? data.amount : 'N/A';
+                const status = data.status || 'N/A';
+                const date = data.date || 'N/A';
+                const connections = network ? network.getConnectedNodes(nodeId).length : 0;
+
+                info.innerHTML = `
+                    <strong>${escapeHtml(String(type).toUpperCase())}</strong><br>
+                    ID: ${escapeHtml(String(id))}<br>
+                    Status: ${escapeHtml(String(status))}<br>
+                    Date: ${escapeHtml(String(date))}<br>
+                    Amount: ${escapeHtml(String(amount))}<br>
+                    Connections: ${connections}
+                `;
             } catch (error) {
                 console.error('Error loading node details:', error);
             }
@@ -476,13 +837,30 @@
                     sendMessage();
                 }
             });
+
+            const nodeSearch = document.getElementById('nodeSearch');
+            if (nodeSearch) {
+                nodeSearch.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        searchAndFocusNode();
+                    }
+                });
+            }
+
+            const typeFilter = document.getElementById('typeFilter');
+            if (typeFilter) {
+                typeFilter.addEventListener('change', () => applyTypeFilter());
+            }
         }
 
         async function sendMessage() {
             const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendBtn');
             const message = chatInput.value.trim();
 
             if (!message) return;
+
+            sendBtn.disabled = true;
 
             // Add user message to chat
             addMessage(message, 'user');
@@ -507,6 +885,11 @@
                 // Remove loading message
                 lastBotMessage.remove();
 
+                if (!response.ok) {
+                    addMessage(data.error || 'Backend error while processing question.', 'system');
+                    return;
+                }
+
                 if (data.valid === false) {
                     // Show error/guardrail message
                     addMessage(data.response || 'Query outside dataset scope.', 'system');
@@ -521,6 +904,8 @@
                 console.error('Error:', error);
                 lastBotMessage.remove();
                 addMessage('Error processing query. Make sure the backend is running.', 'system');
+            } finally {
+                sendBtn.disabled = false;
             }
         }
 
@@ -533,7 +918,8 @@
             const chatMessages = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
-            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(text)}</div>`;
+            const rendered = type === 'user' ? escapeHtml(text) : renderMarkdown(text);
+            messageDiv.innerHTML = `<div class="message-content">${rendered}</div>`;
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -542,9 +928,56 @@
             const chatMessages = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message system';
-            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(text)}</div>`;
+            messageDiv.innerHTML = `<div class="message-content">${renderMarkdown(text)}</div>`;
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function renderMarkdown(text) {
+            if (!text) return '';
+
+            let html = escapeHtml(text);
+
+            // Fenced code blocks
+            html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
+
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Bold and italic
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // Convert bullet lines to list blocks
+            const lines = html.split(/\r?\n/);
+            const out = [];
+            let inList = false;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
+                if (bullet) {
+                    if (!inList) {
+                        out.push('<ul>');
+                        inList = true;
+                    }
+                    out.push(`<li>${bullet[1]}</li>`);
+                } else {
+                    if (inList) {
+                        out.push('</ul>');
+                        inList = false;
+                    }
+                    if (trimmed.length > 0) {
+                        out.push(`<p>${trimmed}</p>`);
+                    }
+                }
+            }
+
+            if (inList) {
+                out.push('</ul>');
+            }
+
+            return out.join('');
         }
 
         function escapeHtml(text) {

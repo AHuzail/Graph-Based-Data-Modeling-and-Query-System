@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from pathlib import Path
+import networkx as nx
 
 from data_loader import DataLoader
 from graph_builder import GraphBuilder
@@ -115,6 +116,94 @@ def get_subgraph(node_id):
         return jsonify({'error': f'Node {node_id} not found'}), 404
     
     return jsonify(subgraph)
+
+
+# Get full graph data (limited to avoid overwhelming browser)
+@app.route('/api/graph/all', methods=['GET'])
+def get_full_graph():
+    """Get full graph data with optional filtering."""
+    if not graph_builder:
+        return jsonify({'error': 'System not initialized'}), 500
+    
+    limit = request.args.get('limit', graph_builder.graph.number_of_nodes(), type=int)
+    max_edges = request.args.get('max_edges', 2500, type=int)
+    node_type = request.args.get('type', None, type=str)  # Filter by type if specified
+    connected = request.args.get('connected', 'true', type=str).lower() != 'false'
+    
+    nodes = list(graph_builder.graph.nodes())
+    graph_for_edges = graph_builder.graph
+    
+    # Filter nodes if type specified
+    if node_type:
+        nodes = [n for n in nodes if graph_builder.graph.nodes[n].get('type') == node_type]
+
+    # Force a connected sample by selecting nodes from a single component and expanding by BFS.
+    if connected and nodes:
+        undirected = graph_builder.graph.to_undirected()
+        sub_undirected = undirected.subgraph(nodes)
+        components = list(nx.connected_components(sub_undirected))
+        if components:
+            largest_component = max(components, key=len)
+            seed = next(iter(largest_component))
+            bfs_nodes = []
+            for node in nx.bfs_tree(sub_undirected, seed):
+                bfs_nodes.append(node)
+                if len(bfs_nodes) >= limit:
+                    break
+            nodes = bfs_nodes
+    
+    # Apply limit
+    nodes = list(nodes)[:limit]
+    
+    # Get edges for these nodes
+    node_set = set(nodes)
+    filtered_edges = [
+        (u, v, d) for u, v, d in graph_for_edges.edges(data=True) if u in node_set and v in node_set
+    ]
+
+    # Deduplicate multi-edges to keep visualization responsive.
+    dedup_edges = []
+    seen = set()
+    for u, v, d in filtered_edges:
+        rel = str(d.get('relationship', 'related_to'))
+        key = (str(u), str(v), rel)
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup_edges.append((u, v, d))
+
+    if max_edges > 0:
+        dedup_edges = dedup_edges[:max_edges]
+    
+    # Build lightweight, JSON-safe payload for browser rendering.
+    vis_nodes = []
+    for n in nodes:
+        attrs = dict(graph_builder.graph.nodes[n])
+        vis_nodes.append({
+            'id': str(n),
+            'type': str(attrs.get('type', 'unknown')),
+            'entity_id': str(attrs.get('id', n)),
+            'status': str(attrs.get('status', ''))
+        })
+
+    vis_edges = []
+    for u, v, d in dedup_edges:
+        vis_edges.append({
+            'from': str(u),
+            'to': str(v),
+            'relationship': str(d.get('relationship', 'related_to'))
+        })
+
+    return jsonify({
+        'nodes': vis_nodes,
+        'edges': vis_edges,
+        'meta': {
+            'connected': connected,
+            'returned_nodes': len(vis_nodes),
+            'returned_edges': len(vis_edges),
+            'max_edges': max_edges
+        }
+    })
 
 
 # Query endpoints
@@ -263,6 +352,7 @@ def api_docs():
             'GET /api/graph/summary': 'Get graph statistics',
             'GET /api/graph/node/<node_id>': 'Get node details',
             'GET /api/graph/subgraph/<node_id>': 'Get subgraph around node',
+            'GET /api/graph/all?connected=true&limit=<n>': 'Get connected graph payload for visualization',
             'GET /api/query/products-by-billing': 'Get products by billing count',
             'GET /api/query/trace-flow/<document_id>': 'Trace document flow',
             'GET /api/query/incomplete-flows': 'Find incomplete flows',

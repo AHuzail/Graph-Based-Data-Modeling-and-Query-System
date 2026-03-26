@@ -12,19 +12,50 @@ class LLMService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
         self.model = None
+        self.model_name = None
         self.conversation_history = []
         self.available = False
         
         if self.api_key and self.api_key != 'your_api_key_here':
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model_name = self._select_model_name()
+                self.model = genai.GenerativeModel(self.model_name)
                 self.available = True
-                print("✓ LLM service initialized")
+                print(f"✓ LLM service initialized ({self.model_name})")
             except Exception as e:
                 print(f"⚠ LLM service initialization failed: {e}")
         else:
             print("⚠ GOOGLE_API_KEY not set - LLM features will be disabled")
+
+    def _select_model_name(self) -> str:
+        """Pick the best available model for generateContent in current account/API version."""
+        preferred = [
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-pro-latest',
+            'gemini-1.5-flash'
+        ]
+        try:
+            available = []
+            for m in genai.list_models():
+                methods = getattr(m, 'supported_generation_methods', []) or []
+                if 'generateContent' in methods:
+                    available.append(getattr(m, 'name', '').replace('models/', ''))
+
+            for candidate in preferred:
+                if candidate in available:
+                    return candidate
+
+            # Fallback to first generateContent-capable model.
+            if available:
+                return available[0]
+        except Exception:
+            pass
+
+        # Last-resort default.
+        return 'gemini-1.5-flash-latest'
 
     def generate_query_from_natural_language(
         self, 
@@ -85,33 +116,116 @@ Respond ONLY with valid JSON in this format:
 
         try:
             response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
-            
-            # Try to extract JSON from response
-            if response_text.startswith('{'):
-                result = json.loads(response_text)
-            else:
-                # Try to find JSON in response
+            response_text = (response.text or '').strip()
+
+            # Remove common markdown fences if model wraps JSON.
+            if response_text.startswith('```'):
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+            result = None
+
+            # Try direct JSON parse.
+            if response_text.startswith('{') and response_text.endswith('}'):
+                try:
+                    result = json.loads(response_text)
+                except Exception:
+                    result = None
+
+            # Try extracting JSON block from mixed text.
+            if result is None:
                 start = response_text.find('{')
                 end = response_text.rfind('}') + 1
                 if start >= 0 and end > start:
-                    result = json.loads(response_text[start:end])
-                else:
-                    result = {
-                        'query_type': 'INVALID',
-                        'parameters': {},
-                        'explanation': 'Could not parse response',
-                        'is_valid': False
-                    }
-            
+                    try:
+                        result = json.loads(response_text[start:end])
+                    except Exception:
+                        result = None
+
+            # Fall back to deterministic rules to avoid false INVALID for in-domain questions.
+            if not isinstance(result, dict) or 'query_type' not in result:
+                result = self._rule_based_query_classification(query)
+
+            if result.get('query_type') == 'INVALID':
+                # Last chance heuristic for obvious in-domain questions.
+                heuristic = self._rule_based_query_classification(query)
+                if heuristic.get('query_type') != 'INVALID':
+                    result = heuristic
+
             return result
         except Exception as e:
+            fallback = self._rule_based_query_classification(query)
+            if fallback.get('query_type') != 'INVALID':
+                fallback['explanation'] = f"Fallback classifier used after LLM error: {str(e)}"
+                return fallback
             return {
                 'query_type': 'INVALID',
                 'parameters': {},
                 'explanation': f'Error processing query: {str(e)}',
                 'is_valid': False
             }
+
+    def _rule_based_query_classification(self, query: str) -> Dict[str, Any]:
+        """Deterministic fallback classification for in-domain queries."""
+        q = (query or '').lower()
+
+        # Off-topic quick reject.
+        off_topic_markers = ['weather', 'capital of', 'poem', 'movie', 'recipe', 'song']
+        if any(m in q for m in off_topic_markers):
+            return {
+                'query_type': 'INVALID',
+                'parameters': {},
+                'explanation': 'Question appears outside dataset scope',
+                'is_valid': False
+            }
+
+        if 'trace' in q or 'flow' in q:
+            doc_id = ''.join(ch for ch in q if ch.isdigit())[:10] or '740506'
+            return {
+                'query_type': 'trace_document_flow',
+                'parameters': {'document_id': doc_id, 'document_type': 'order'},
+                'explanation': 'Tracing document flow through order lifecycle',
+                'is_valid': True
+            }
+
+        if 'incomplete' in q or ('delivered' in q and 'billed' in q):
+            return {
+                'query_type': 'incomplete_flows',
+                'parameters': {},
+                'explanation': 'Finding incomplete order-to-cash flows',
+                'is_valid': True
+            }
+
+        if 'customer' in q:
+            digits = ''.join(ch for ch in q if ch.isdigit())
+            return {
+                'query_type': 'customer_search',
+                'parameters': {'customer_id': digits[:10] or '310000108'},
+                'explanation': 'Searching records for a customer',
+                'is_valid': True
+            }
+
+        if 'product' in q or 'invoice' in q or 'billing' in q or 'top' in q or 'most' in q:
+            return {
+                'query_type': 'products_by_billing_count',
+                'parameters': {'limit': 10},
+                'explanation': 'Ranking products by billing document frequency',
+                'is_valid': True
+            }
+
+        if 'summary' in q or 'statistics' in q or 'overview' in q:
+            return {
+                'query_type': 'summary_statistics',
+                'parameters': {},
+                'explanation': 'Returning graph summary statistics',
+                'is_valid': True
+            }
+
+        return {
+            'query_type': 'INVALID',
+            'parameters': {},
+            'explanation': 'Could not map query to known dataset intent',
+            'is_valid': False
+        }
 
     def generate_natural_language_response(
         self,
@@ -146,7 +260,16 @@ Provide a natural language explanation of these results for a business user.
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error generating response: {str(e)}"
+            # Deterministic fallback so users still get useful output.
+            if isinstance(query_results, list):
+                preview = query_results[:5]
+                return (
+                    f"I found {len(query_results)} matching records. "
+                    f"Top results: {json.dumps(preview, default=str)[:500]}"
+                )
+            if isinstance(query_results, dict):
+                return f"Here are the computed results: {json.dumps(query_results, default=str)[:800]}"
+            return f"I could not generate a formatted explanation, but the query executed. Raw result: {str(query_results)[:500]}"
 
     def chat(self, message: str, context: Dict[str, Any]) -> str:
         """Have a multi-turn conversation with context."""
