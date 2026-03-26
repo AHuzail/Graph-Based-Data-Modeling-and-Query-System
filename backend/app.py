@@ -25,10 +25,13 @@ query_engine = None
 llm_service = None
 graph_summary = None
 
+# Flag to track initialization
+_system_initialized = False
+
 
 def initialize_system():
     """Initialize the graph system on startup."""
-    global data_loader, graph_builder, query_engine, llm_service, graph_summary
+    global data_loader, graph_builder, query_engine, llm_service, graph_summary, _system_initialized
     
     print("Initializing graph system...")
     
@@ -43,10 +46,12 @@ def initialize_system():
             data_dir = r'h:\Dodge AI\sap-o2c-data'
         else:
             print("ERROR: Data directory not found. Set DATA_DIR environment variable or place sap-o2c-data in current directory")
+            _system_initialized = False
             return False
     
     if not Path(data_dir).exists():
         print(f"Data directory not found: {data_dir}")
+        _system_initialized = False
         return False
     
     try:
@@ -71,12 +76,21 @@ def initialize_system():
         
         print("System initialized successfully!")
         print(f"Summary: {graph_summary}")
+        _system_initialized = True
         return True
     except Exception as e:
         print(f"Error initializing system: {e}")
         import traceback
         traceback.print_exc()
+        _system_initialized = False
         return False
+
+
+# Initialize system on app startup (runs in both Flask dev mode and gunicorn)
+with app.app_context():
+    if not _system_initialized:
+        print("Calling initialize_system at app startup...")
+        initialize_system()
 
 
 # Health check endpoint
