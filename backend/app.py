@@ -32,8 +32,19 @@ def initialize_system():
     
     print("Initializing graph system...")
     
-    # Get data directory
-    data_dir = r'h:\Dodge AI\sap-o2c-data'
+    # Get data directory (works in Docker and locally)
+    data_dir = os.getenv('DATA_DIR')
+    if not data_dir:
+        # Try relative path (works in Docker: /app/sap-o2c-data)
+        if Path('./sap-o2c-data').exists():
+            data_dir = './sap-o2c-data'
+        # Fallback to Windows local path
+        elif Path(r'h:\Dodge AI\sap-o2c-data').exists():
+            data_dir = r'h:\Dodge AI\sap-o2c-data'
+        else:
+            print("ERROR: Data directory not found. Set DATA_DIR environment variable or place sap-o2c-data in current directory")
+            return False
+    
     if not Path(data_dir).exists():
         print(f"Data directory not found: {data_dir}")
         return False
