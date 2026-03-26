@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph-Based Data Query System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .graph-section {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-section {
+            width: 350px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 4px;
+        }
+
+        #network {
+            flex: 1;
+            background: #fafafa;
+        }
+
+        #chatMessages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: #f9f9f9;
+        }
+
+        .message {
+            margin-bottom: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message.bot {
+            text-align: left;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 85%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: #667eea;
+            color: white;
+        }
+
+        .message.bot .message-content {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .message.system .message-content {
+            background: #fff3cd;
+            color: #856404;
+            font-size: 12px;
+            font-style: italic;
+        }
+
+        .chat-input-area {
+            padding: 12px;
+            border-top: 1px solid #e0e0e0;
+            background: white;
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chat-input-area input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .chat-input-area button {
+            padding: 10px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .chat-input-area button:hover {
+            background: #5568d3;
+        }
+
+        .chat-input-area button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .quick-queries {
+            padding: 12px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .quick-query-btn {
+            display: inline-block;
+            background: #f0f0f0;
+            padding: 4px 8px;
+            margin: 4px 2px 4px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            border: none;
+            transition: background 0.2s;
+        }
+
+        .quick-query-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .stats-bar {
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            color: #666;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        .stat-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .node-details {
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            margin-top: 8px;
+            font-size: 11px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .node-details-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #667eea;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <div class="graph-section">
+                <div class="header">
+                    <h1>SAP Order-to-Cash Data Graph</h1>
+                    <p>Explore relationships between orders, deliveries, invoices, and payments</p>
+                </div>
+                <div class="stats-bar" id="statsBar">
+                    <div class="stat-item">
+                        <div class="stat-label">Nodes</div>
+                        <div class="stat-value" id="nodeCount">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Edges</div>
+                        <div class="stat-value" id="edgeCount">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Orders</div>
+                        <div class="stat-value" id="orderCount">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Deliveries</div>
+                        <div class="stat-value" id="deliveryCount">-</div>
+                    </div>
+                </div>
+                <div id="network"></div>
+            </div>
+        </div>
+
+        <div class="chat-section">
+            <div class="header">
+                <h1>Ask Questions</h1>
+                <p>Query your data with natural language</p>
+            </div>
+
+            <div class="quick-queries">
+                <strong style="display: block; margin-bottom: 6px;">Quick Questions:</strong>
+                <button class="quick-query-btn" onclick="askQuestion('Which products have the most billing documents?')">Top Products</button>
+                <button class="quick-query-btn" onclick="askQuestion('Show incomplete orders - delivered but not billed')">Incomplete Flows</button>
+                <button class="quick-query-btn" onclick="askQuestion('Trace the complete flow of order 740506')">Trace Order</button>
+            </div>
+
+            <div id="chatMessages"></div>
+
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Ask a question..." />
+                <button onclick="sendMessage()" id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let network = null;
+        let nodes = new vis.DataSet();
+        let edges = new vis.DataSet();
+        let selectedNodeId = null;
+
+        // Color mapping for node types
+        const nodeColors = {
+            order: '#667eea',
+            delivery: '#764ba2',
+            invoice: '#f093fb',
+            product: '#4facfe',
+            customer: '#43e97b',
+            payment: '#fa709a',
+            journal_entry: '#fee140',
+            plant: '#30b0fe'
+        };
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            initializeChat();
+            await loadGraphData();
+            initializeNetwork();
+            setupEventListeners();
+        });
+
+        function initializeChat() {
+            const chatMessages = document.getElementById('chatMessages');
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'message bot';
+            welcomeMsg.innerHTML = `<div class="message-content">
+                👋 Welcome to the Graph Query System!<br><br>
+                I can help you explore your SAP Order-to-Cash data. Try asking about:
+                <ul style="margin-left: 16px; margin-top: 8px;">
+                    <li>Top products by billing count</li>
+                    <li>Document flow tracing</li>
+                    <li>Incomplete workflows</li>
+                    <li>Customer orders</li>
+                </ul>
+            </div>`;
+            chatMessages.appendChild(welcomeMsg);
+        }
+
+        async function loadGraphData() {
+            try {
+                const response = await fetch(`${API_BASE}/graph/summary`);
+                const data = await response.json();
+
+                // Update stats
+                document.getElementById('nodeCount').textContent = data.total_nodes || '-';
+                document.getElementById('edgeCount').textContent = data.total_edges || '-';
+                document.getElementById('orderCount').textContent = data.node_types?.order || '-';
+                document.getElementById('deliveryCount').textContent = data.node_types?.delivery || '-';
+
+                // Create sample nodes and edges for visualization
+                createSampleGraph(data);
+            } catch (error) {
+                console.error('Error loading graph data:', error);
+                addSystemMessage('Failed to load graph data.');
+            }
+        }
+
+        function createSampleGraph(summary) {
+            // Create representative nodes
+            const nodeData = [
+                { id: 'order_sample', label: 'Sales Order\n(740506)', color: nodeColors.order, title: 'Sales Order Example' },
+                { id: 'delivery_sample', label: 'Delivery\n(80737721)', color: nodeColors.delivery, title: 'Outbound Delivery' },
+                { id: 'invoice_sample', label: 'Invoice\n(90504248)', color: nodeColors.invoice, title: 'Billing Document' },
+                { id: 'customer_sample', label: 'Customer\n(310000108)', color: nodeColors.customer, title: 'Business Partner' },
+                { id: 'product_sample', label: 'Product\n(3001456)', color: nodeColors.product, title: 'Material' },
+                { id: 'payment_sample', label: 'Payment', color: nodeColors.payment, title: 'Accounts Receivable' },
+            ];
+
+            const edgeData = [
+                { from: 'order_sample', to: 'delivery_sample', label: 'creates', arrows: 'to' },
+                { from: 'order_sample', to: 'invoice_sample', label: 'billed_by', arrows: 'to' },
+                { from: 'order_sample', to: 'customer_sample', label: 'placed_by', arrows: 'to' },
+                { from: 'order_sample', to: 'product_sample', label: 'contains', arrows: 'to' },
+                { from: 'invoice_sample', to: 'payment_sample', label: 'paid_by', arrows: 'to' },
+                { from: 'delivery_sample', to: 'product_sample', label: 'contains', arrows: 'to' },
+            ];
+
+            nodes.clear();
+            edges.clear();
+            nodeData.forEach(n => nodes.add(n));
+            edgeData.forEach(e => edges.add(e));
+        }
+
+        function initializeNetwork() {
+            const container = document.getElementById('network');
+            const data = {
+                nodes: nodes,
+                edges: edges
+            };
+
+            const options = {
+                physics: {
+                    enabled: true,
+                    stabilization: {
+                        iterations: 200
+                    }
+                },
+                nodes: {
+                    shape: 'box',
+                    font: { size: 12, face: 'Inter' },
+                    margin: 8,
+                    widthConstraint: { maximum: 120 }
+                },
+                edges: {
+                    font: { size: 10 },
+                    smooth: { type: 'continuous' },
+                    arrows: { to: { enabled: true, scaleFactor: 0.5 } }
+                },
+                interaction: {
+                    hover: true,
+                    navigationButtons: true,
+                    keyboard: true
+                }
+            };
+
+            network = new vis.Network(container, data, options);
+
+            network.on('click', async function(params) {
+                if (params.nodes.length > 0) {
+                    selectedNodeId = params.nodes[0];
+                    await showNodeDetails(selectedNodeId);
+                }
+            });
+        }
+
+        async function showNodeDetails(nodeId) {
+            try {
+                const response = await fetch(`${API_BASE}/graph/node/${nodeId}`);
+                const data = await response.json();
+
+                // Could display in a panel, but for now just log
+                console.log('Node details:', data);
+            } catch (error) {
+                console.error('Error loading node details:', error);
+            }
+        }
+
+        function setupEventListeners() {
+            const chatInput = document.getElementById('chatInput');
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+
+        async function sendMessage() {
+            const chatInput = document.getElementById('chatInput');
+            const message = chatInput.value.trim();
+
+            if (!message) return;
+
+            // Add user message to chat
+            addMessage(message, 'user');
+            chatInput.value = '';
+
+            // Show loading indicator
+            addMessage('', 'bot');
+            const lastBotMessage = document.getElementById('chatMessages').lastChild;
+            const spinner = document.createElement('div');
+            spinner.className = 'spinner';
+            lastBotMessage.querySelector('.message-content').appendChild(spinner);
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                lastBotMessage.remove();
+
+                if (data.valid === false) {
+                    // Show error/guardrail message
+                    addMessage(data.response || 'Query outside dataset scope.', 'system');
+                } else {
+                    // Show response
+                    addMessage(data.response || 'No response', 'bot');
+                    if (data.query_explanation) {
+                        addSystemMessage(`Query: ${data.query_explanation}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                lastBotMessage.remove();
+                addMessage('Error processing query. Make sure the backend is running.', 'system');
+            }
+        }
+
+        function askQuestion(question) {
+            document.getElementById('chatInput').value = question;
+            sendMessage();
+        }
+
+        function addMessage(text, type) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(text)}</div>`;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addSystemMessage(text) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system';
+            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(text)}</div>`;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

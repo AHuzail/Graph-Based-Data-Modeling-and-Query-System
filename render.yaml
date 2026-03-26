@@ -1,0 +1,32 @@
+# Render.com Deployment Configuration
+# This file configures automatic deployment to Render
+
+runtime = "python-3.9"
+root = "backend"
+
+[[build]]
+  cmd = "pip install -r requirements.txt"
+
+[[services]]
+name = "graph-query-api"
+runtime = "python"
+plan = "free"
+healthCheckPath = "/api/health"
+
+[[services.envVars]]
+name = "FLASK_ENV"
+value = "production"
+
+[[services.envVars]]
+name = "PORT"
+value = "5000"
+
+[[services.envVars]]
+name = "GOOGLE_API_KEY"
+value = "your_api_key_here"
+
+[[services.builds]]
+cmd = "pip install -r requirements.txt"
+
+[[services.runs]]
+cmd = "gunicorn --bind 0.0.0.0:5000 --timeout 120 app:app"
