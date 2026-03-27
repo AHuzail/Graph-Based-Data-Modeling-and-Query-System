@@ -431,6 +431,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
     <script>
         const API_BASE = (() => {
+            const DEFAULT_BACKEND_ORIGIN = 'https://graph-query-app-student.azurewebsites.net';
             const configuredApiBase = window.API_BASE_URL || localStorage.getItem('API_BASE_URL');
             if (configuredApiBase) {
                 return configuredApiBase.replace(/\/$/, '') + '/api';
@@ -439,6 +440,10 @@
             // Use local backend during development and same-origin in deployments.
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                 return 'http://localhost:5000/api';
+            }
+
+            if (window.location.hostname.includes('azurestaticapps.net')) {
+                return `${DEFAULT_BACKEND_ORIGIN}/api`;
             }
 
             return `${window.location.origin}/api`;
